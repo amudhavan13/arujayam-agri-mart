@@ -9,7 +9,203 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      order_items: {
+        Row: {
+          color: string
+          id: string
+          order_id: string
+          price: number
+          product_id: string | null
+          product_name: string
+          quantity: number
+          status: string
+        }
+        Insert: {
+          color: string
+          id?: string
+          order_id: string
+          price: number
+          product_id?: string | null
+          product_name: string
+          quantity: number
+          status?: string
+        }
+        Update: {
+          color?: string
+          id?: string
+          order_id?: string
+          price?: number
+          product_id?: string | null
+          product_name?: string
+          quantity?: number
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          can_cancel: boolean | null
+          can_replace: boolean | null
+          can_return: boolean | null
+          delivered_at: string | null
+          id: string
+          order_status: string
+          ordered_at: string
+          payment_method: string
+          shipping_address: Json
+          total_amount: number
+          user_id: string
+        }
+        Insert: {
+          can_cancel?: boolean | null
+          can_replace?: boolean | null
+          can_return?: boolean | null
+          delivered_at?: string | null
+          id?: string
+          order_status?: string
+          ordered_at?: string
+          payment_method: string
+          shipping_address: Json
+          total_amount: number
+          user_id: string
+        }
+        Update: {
+          can_cancel?: boolean | null
+          can_replace?: boolean | null
+          can_return?: boolean | null
+          delivered_at?: string | null
+          id?: string
+          order_status?: string
+          ordered_at?: string
+          payment_method?: string
+          shipping_address?: Json
+          total_amount?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          category: string
+          colors: string[]
+          created_at: string
+          description: string
+          id: string
+          images: string[]
+          name: string
+          price: number
+          specifications: Json | null
+          stock_quantity: number
+        }
+        Insert: {
+          category: string
+          colors?: string[]
+          created_at?: string
+          description: string
+          id?: string
+          images: string[]
+          name: string
+          price: number
+          specifications?: Json | null
+          stock_quantity?: number
+        }
+        Update: {
+          category?: string
+          colors?: string[]
+          created_at?: string
+          description?: string
+          id?: string
+          images?: string[]
+          name?: string
+          price?: number
+          specifications?: Json | null
+          stock_quantity?: number
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          address: string | null
+          id: string
+          is_admin: boolean
+          phone_number: string | null
+          profile_picture: string | null
+          username: string
+        }
+        Insert: {
+          address?: string | null
+          id: string
+          is_admin?: boolean
+          phone_number?: string | null
+          profile_picture?: string | null
+          username: string
+        }
+        Update: {
+          address?: string | null
+          id?: string
+          is_admin?: boolean
+          phone_number?: string | null
+          profile_picture?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          images: string[] | null
+          product_id: string
+          rating: number
+          user_id: string
+          username: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          images?: string[] | null
+          product_id: string
+          rating: number
+          user_id: string
+          username: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          images?: string[] | null
+          product_id?: string
+          rating?: number
+          user_id?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

@@ -1,17 +1,16 @@
 
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAppContext } from '../context/AppContext';
+import { useAuth } from '@/hooks/use-auth';
 import Layout from '../components/Layout';
-import { mockUsers } from '../data/mockData';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { toast } from '@/components/ui/sonner';
+import { toast } from '@/components/ui/use-toast';
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { dispatch } = useAppContext();
+  const { signIn, sendOTP, verifyOTP } = useAuth();
   
   const [formData, setFormData] = useState({
     email: '',
@@ -33,53 +32,73 @@ const LoginPage: React.FC = () => {
     e.preventDefault();
     
     if (!formData.email || !formData.password) {
-      toast.error('Please enter both email and password');
+      toast({
+        variant: "destructive",
+        title: "Missing fields",
+        description: "Please enter both email and password"
+      });
       return;
     }
     
     setLoading(true);
     
-    // Check if user exists (for demo purposes)
-    const user = mockUsers.find(user => user.email === formData.email);
+    // Special case for admin login - bypass OTP for demo
+    const isAdminLogin = formData.email === 'admin@gmail.com' && formData.password === 'admin@123';
     
-    if (!user || (formData.email !== "admin@gmail.com" && formData.password !== "admin@123" && user.email !== "admin@gmail.com")) {
-      toast.error('Invalid email or password');
-      setLoading(false);
+    if (isAdminLogin) {
+      try {
+        await signIn(formData.email, formData.password);
+        navigate('/');
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "Login failed",
+          description: error.message
+        });
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     
-    // Simulate OTP sending
-    setTimeout(() => {
+    try {
+      // Send OTP via email (in a real app)
+      await sendOTP(formData.email);
       setOtpSent(true);
+    } catch (error) {
+      console.error("Error sending OTP:", error);
+    } finally {
       setLoading(false);
-      toast.success('OTP sent to your email');
-    }, 1500);
+    }
   };
   
   const handleVerifyOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.otp) {
-      toast.error('Please enter the OTP');
+      toast({
+        variant: "destructive",
+        title: "OTP required",
+        description: "Please enter the OTP"
+      });
       return;
     }
     
     setIsVerifying(true);
     
-    // Simulate OTP verification
-    setTimeout(() => {
-      const user = mockUsers.find(user => user.email === formData.email);
+    try {
+      const isValid = await verifyOTP(formData.email, formData.otp);
       
-      if (user) {
-        dispatch({ type: 'LOGIN_SUCCESS', payload: user });
-        toast.success(`Welcome back, ${user.username}!`);
+      if (isValid) {
+        // Proceed with login
+        await signIn(formData.email, formData.password);
         navigate('/');
-      } else {
-        toast.error('Invalid credentials');
       }
-      
+    } catch (error) {
+      console.error("Error verifying OTP:", error);
+    } finally {
       setIsVerifying(false);
-    }, 1500);
+    }
   };
   
   // Special case for admin login - bypass OTP for demo

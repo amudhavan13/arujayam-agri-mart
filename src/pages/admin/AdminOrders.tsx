@@ -1,23 +1,106 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminLayout from './AdminLayout';
-import { useAppContext } from '../../context/AppContext';
-import { Badge } from "@/components/ui/badge";
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from "@/components/ui/button";
-import { toast } from '@/components/ui/sonner';
-import { Search, CheckCircle } from 'lucide-react';
+import { Badge } from "@/components/ui/badge";
+import { toast } from '@/components/ui/use-toast';
+import { Search, CheckCircle, Loader2 } from 'lucide-react';
+
+interface OrderItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  color: string;
+  price: number;
+  status: string;
+}
+
+interface Order {
+  id: string;
+  user_id: string;
+  shipping_address: {
+    doorNumber: string;
+    street: string;
+    cityOrVillage: string;
+    state: string;
+    pinCode: string;
+  };
+  payment_method: string;
+  order_status: string;
+  total_amount: number;
+  ordered_at: string;
+  delivered_at: string | null;
+  can_cancel: boolean;
+  can_replace: boolean;
+  can_return: boolean;
+  items: OrderItem[];
+  profiles: {
+    username: string;
+  };
+}
 
 const AdminOrders: React.FC = () => {
-  const { state, dispatch } = useAppContext();
-  const { orders } = state;
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
   
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+  
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch orders with user information
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          profiles:user_id (username)
+        `)
+        .order('ordered_at', { ascending: false });
+        
+      if (error) throw error;
+      
+      if (data) {
+        // Fetch order items for each order
+        const ordersWithItems = await Promise.all(data.map(async (order) => {
+          const { data: items, error: itemsError } = await supabase
+            .from('order_items')
+            .select('*')
+            .eq('order_id', order.id);
+            
+          if (itemsError) throw itemsError;
+          
+          return {
+            ...order,
+            items: items || []
+          };
+        }));
+        
+        setOrders(ordersWithItems);
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load orders"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   // Filter and search orders
   const filteredOrders = orders.filter(order => {
     // Apply status filter
-    if (filter !== 'all' && order.orderStatus !== filter) {
+    if (filter !== 'all' && order.order_status !== filter) {
       return false;
     }
     
@@ -25,9 +108,9 @@ const AdminOrders: React.FC = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       const matchesOrderId = order.id.toLowerCase().includes(term);
-      const matchesUserId = order.userId.toLowerCase().includes(term);
+      const matchesUserId = order.user_id.toLowerCase().includes(term);
       const matchesItems = order.items.some(item => 
-        item.productName.toLowerCase().includes(term)
+        item.product_name.toLowerCase().includes(term)
       );
       
       return matchesOrderId || matchesUserId || matchesItems;
@@ -44,47 +127,100 @@ const AdminOrders: React.FC = () => {
     setFilter(e.target.value);
   };
   
-  const handleUpdateItemStatus = (orderId: string, itemIndex: number, status: string) => {
-    // In a real app, this would call an API
-    // For this demo, we'll just assume it succeeded
-    
-    // Find the order
-    const orderIndex = orders.findIndex(order => order.id === orderId);
-    if (orderIndex === -1) return;
-    
-    // Update the item status
-    const updatedOrders = [...orders];
-    updatedOrders[orderIndex].items[itemIndex].status = status as any;
-    
-    // Check if all items are processed
-    const allProcessed = updatedOrders[orderIndex].items.every(
-      item => item.status === 'processed' || item.status === 'shipped' || item.status === 'delivered'
-    );
-    
-    // Update order status if all items are processed
-    if (allProcessed) {
-      updatedOrders[orderIndex].orderStatus = 'shipped';
+  const handleUpdateItemStatus = async (orderId: string, itemId: string, status: string) => {
+    try {
+      // Update the item status
+      const { error } = await supabase
+        .from('order_items')
+        .update({ status })
+        .eq('id', itemId);
+        
+      if (error) throw error;
+      
+      // Update the local state
+      setOrders(prevOrders => 
+        prevOrders.map(order => {
+          if (order.id === orderId) {
+            const updatedItems = order.items.map(item => 
+              item.id === itemId ? { ...item, status } : item
+            );
+            
+            // Check if all items are processed
+            const allProcessed = updatedItems.every(
+              item => item.status === 'processed' || item.status === 'shipped' || item.status === 'delivered'
+            );
+            
+            return {
+              ...order,
+              items: updatedItems,
+              order_status: allProcessed ? 'shipped' : order.order_status
+            };
+          }
+          return order;
+        })
+      );
+      
+      toast({
+        title: "Status updated",
+        description: "Order item status updated successfully"
+      });
+    } catch (error) {
+      console.error('Error updating item status:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update item status"
+      });
     }
-    
-    dispatch({ type: 'SET_ORDERS', payload: updatedOrders });
-    toast.success('Order item updated successfully');
   };
   
-  const handleCompleteOrder = (orderId: string) => {
-    // In a real app, this would call an API
-    // For this demo, we'll just assume it succeeded
-    
-    // Find the order
-    const orderIndex = orders.findIndex(order => order.id === orderId);
-    if (orderIndex === -1) return;
-    
-    // Update the order status
-    dispatch({
-      type: 'UPDATE_ORDER_STATUS',
-      payload: { orderId, status: 'delivered' }
-    });
-    
-    toast.success('Order marked as delivered');
+  const handleCompleteOrder = async (orderId: string) => {
+    try {
+      // Update the order status
+      const { error } = await supabase
+        .from('orders')
+        .update({ 
+          order_status: 'delivered',
+          delivered_at: new Date().toISOString()
+        })
+        .eq('id', orderId);
+        
+      if (error) throw error;
+      
+      // Also update all items to delivered
+      const { error: itemsError } = await supabase
+        .from('order_items')
+        .update({ status: 'delivered' })
+        .eq('order_id', orderId);
+        
+      if (itemsError) throw itemsError;
+      
+      // Update the local state
+      setOrders(prevOrders => 
+        prevOrders.map(order => 
+          order.id === orderId 
+            ? { 
+                ...order, 
+                order_status: 'delivered',
+                delivered_at: new Date().toISOString(),
+                items: order.items.map(item => ({ ...item, status: 'delivered' }))
+              } 
+            : order
+        )
+      );
+      
+      toast({
+        title: "Order completed",
+        description: "Order marked as delivered successfully"
+      });
+    } catch (error) {
+      console.error('Error completing order:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to complete order"
+      });
+    }
   };
   
   const getStatusBadgeColor = (status: string) => {
@@ -142,7 +278,11 @@ const AdminOrders: React.FC = () => {
       
       {/* Orders List */}
       <div className="space-y-6">
-        {filteredOrders.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center items-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-agri-primary" />
+          </div>
+        ) : filteredOrders.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg">
             <p className="text-gray-500">No orders found</p>
           </div>
@@ -153,26 +293,26 @@ const AdminOrders: React.FC = () => {
               <div className="p-4 bg-gray-50 border-b flex flex-col md:flex-row md:justify-between md:items-center gap-2">
                 <div>
                   <div className="flex items-center">
-                    <h3 className="font-medium">Order #{order.id}</h3>
+                    <h3 className="font-medium">Order #{order.id.substring(0, 8)}</h3>
                     <Badge 
                       variant="outline" 
-                      className={`ml-3 ${getStatusBadgeColor(order.orderStatus)}`}
+                      className={`ml-3 ${getStatusBadgeColor(order.order_status)}`}
                     >
-                      {order.orderStatus.toUpperCase()}
+                      {order.order_status.toUpperCase()}
                     </Badge>
                   </div>
                   <div className="text-sm text-gray-500 mt-1">
-                    <span className="mr-3">User: {order.userId}</span>
-                    <span>Date: {new Date(order.orderedAt).toLocaleDateString()}</span>
+                    <span className="mr-3">User: {order.profiles.username}</span>
+                    <span>Date: {new Date(order.ordered_at).toLocaleDateString()}</span>
                   </div>
                 </div>
                 
                 <div className="flex items-center">
                   <span className="font-semibold text-agri-primary mr-4">
-                    Total: ₹{order.totalAmount.toLocaleString()}
+                    Total: ₹{parseFloat(order.total_amount.toString()).toLocaleString()}
                   </span>
                   
-                  {order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled' && (
+                  {order.order_status !== 'delivered' && order.order_status !== 'cancelled' && (
                     <Button 
                       onClick={() => handleCompleteOrder(order.id)}
                       className="bg-agri-primary hover:bg-agri-dark"
@@ -209,35 +349,35 @@ const AdminOrders: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {order.items.map((item, index) => (
-                        <tr key={`${order.id}-${index}`}>
+                      {order.items.map((item) => (
+                        <tr key={item.id}>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="font-medium">{item.productName}</div>
+                            <div className="font-medium">{item.product_name}</div>
                             <div className="text-sm text-gray-500">Color: {item.color}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {item.quantity}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            ₹{item.price.toLocaleString()} x {item.quantity} = 
-                            ₹{(item.price * item.quantity).toLocaleString()}
+                            ₹{parseFloat(item.price.toString()).toLocaleString()} x {item.quantity} = 
+                            ₹{(parseFloat(item.price.toString()) * item.quantity).toLocaleString()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <Badge 
                               variant="outline" 
-                              className={`${getStatusBadgeColor(item.status)}`}
+                              className={getStatusBadgeColor(item.status)}
                             >
                               {item.status.toUpperCase()}
                             </Badge>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            {order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled' && (
+                            {order.order_status !== 'delivered' && order.order_status !== 'cancelled' && (
                               <div className="space-x-2">
                                 {item.status === 'pending' && (
                                   <Button 
                                     size="sm" 
                                     variant="outline"
-                                    onClick={() => handleUpdateItemStatus(order.id, index, 'processed')}
+                                    onClick={() => handleUpdateItemStatus(order.id, item.id, 'processed')}
                                   >
                                     Mark Processed
                                   </Button>
@@ -246,7 +386,7 @@ const AdminOrders: React.FC = () => {
                                   <Button 
                                     size="sm" 
                                     variant="outline"
-                                    onClick={() => handleUpdateItemStatus(order.id, index, 'shipped')}
+                                    onClick={() => handleUpdateItemStatus(order.id, item.id, 'shipped')}
                                   >
                                     Mark Shipped
                                   </Button>
@@ -255,7 +395,7 @@ const AdminOrders: React.FC = () => {
                                   <Button 
                                     size="sm" 
                                     variant="outline"
-                                    onClick={() => handleUpdateItemStatus(order.id, index, 'delivered')}
+                                    onClick={() => handleUpdateItemStatus(order.id, item.id, 'delivered')}
                                   >
                                     Mark Delivered
                                   </Button>
@@ -274,12 +414,12 @@ const AdminOrders: React.FC = () => {
               <div className="p-4 border-t bg-gray-50">
                 <h4 className="font-medium mb-2">Shipping Information</h4>
                 <p className="text-sm">
-                  {order.shippingAddress.doorNumber}, {order.shippingAddress.street},
-                  {order.shippingAddress.cityOrVillage}, {order.shippingAddress.state}, 
-                  {order.shippingAddress.pinCode}
+                  {order.shipping_address.doorNumber}, {order.shipping_address.street},
+                  {order.shipping_address.cityOrVillage}, {order.shipping_address.state}, 
+                  {order.shipping_address.pinCode}
                 </p>
                 <p className="text-sm mt-1">
-                  <span className="font-medium">Payment Method:</span> {order.paymentMethod}
+                  <span className="font-medium">Payment Method:</span> {order.payment_method}
                 </p>
               </div>
             </div>
