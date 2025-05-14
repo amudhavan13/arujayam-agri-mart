@@ -3,8 +3,7 @@ import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
 import { useAppContext } from '@/context/AppContext';
-import { toast } from '@/components/ui/use-toast';
-import nodemailer from 'nodemailer';
+import { toast } from '@/hooks/use-toast';
 
 // Define the auth context type
 type AuthContextType = {
