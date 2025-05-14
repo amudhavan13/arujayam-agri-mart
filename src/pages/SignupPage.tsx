@@ -6,7 +6,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { toast } from '@/components/ui/use-toast';
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from '@/hooks/use-toast';
 import { Loader2 } from "lucide-react";
 
 const SignupPage: React.FC = () => {
@@ -128,10 +129,9 @@ const SignupPage: React.FC = () => {
                 
                 <div>
                   <Label htmlFor="address">Address (Optional)</Label>
-                  <Input
+                  <Textarea
                     id="address"
                     name="address"
-                    as="textarea"
                     placeholder="Your address"
                     value={formData.address}
                     onChange={handleInputChange}

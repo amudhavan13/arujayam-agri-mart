@@ -1,536 +1,364 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext } from '@/context/AppContext';
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { toast } from '@/components/ui/sonner';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { toast } from "@/hooks/use-toast";
+import { Clock, Package, Check, X, AlertCircle, Truck, RefreshCcw, ShoppingCart, ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Package, FileText } from 'lucide-react';
-import { Order } from '../types';
+import { Label } from "@/components/ui/label";
+import { supabase } from '@/integrations/supabase/client';
+import { Order } from '@/types';
+
+// Status badge component
+const StatusBadge = ({ status }: { status: string }) => {
+  switch (status.toLowerCase()) {
+    case 'pending':
+      return (
+        <Badge variant="outline" className="border-yellow-500 text-yellow-700 bg-yellow-50">
+          <Clock size={14} className="mr-1" />
+          Pending
+        </Badge>
+      );
+    case 'processing':
+      return (
+        <Badge variant="outline" className="border-blue-500 text-blue-700 bg-blue-50">
+          <Package size={14} className="mr-1" />
+          Processing
+        </Badge>
+      );
+    case 'shipped':
+      return (
+        <Badge variant="outline" className="border-indigo-500 text-indigo-700 bg-indigo-50">
+          <Truck size={14} className="mr-1" />
+          Shipped
+        </Badge>
+      );
+    case 'delivered':
+      return (
+        <Badge variant="outline" className="border-green-500 text-green-700 bg-green-50">
+          <Check size={14} className="mr-1" />
+          Delivered
+        </Badge>
+      );
+    case 'cancelled':
+      return (
+        <Badge variant="outline" className="border-red-500 text-red-700 bg-red-50">
+          <X size={14} className="mr-1" />
+          Cancelled
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="outline">
+          {status}
+        </Badge>
+      );
+  }
+};
 
 const OrdersPage: React.FC = () => {
-  const navigate = useNavigate();
   const { state, dispatch } = useAppContext();
-  const { orders, isAuthenticated, user } = state;
+  const navigate = useNavigate();
   
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
-  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
-  const [cancelReason, setCancelReason] = useState('');
-  const [showCancelModal, setShowCancelModal] = useState(false);
   
-  // Redirect if not logged in
-  React.useEffect(() => {
-    if (!isAuthenticated) {
-      toast.error('Please login to view your orders');
+  useEffect(() => {
+    if (!state.isAuthenticated) {
       navigate('/login');
-    }
-  }, [isAuthenticated, navigate]);
-  
-  // Filter orders based on active tab
-  const getFilteredOrders = () => {
-    if (activeTab === 'all') return orders;
-    return orders.filter(order => {
-      switch (activeTab) {
-        case 'pending':
-          return ['pending', 'processing'].includes(order.orderStatus);
-        case 'delivered':
-          return order.orderStatus === 'delivered';
-        case 'cancelled':
-          return order.orderStatus === 'cancelled';
-        default:
-          return true;
-      }
-    });
-  };
-  
-  const filteredOrders = getFilteredOrders();
-  
-  const handleCancelOrder = (orderId: string) => {
-    setCancelOrderId(orderId);
-    setShowCancelModal(true);
-  };
-  
-  const confirmCancelOrder = async () => {
-    if (!cancelOrderId || !cancelReason) {
-      toast.error('Please provide a reason for cancellation');
       return;
     }
     
-    // Simulate OTP Verification for order cancellation
-    toast.info('OTP sent to your email for verification');
+    fetchOrders();
+  }, [state.isAuthenticated, navigate]);
+  
+  const fetchOrders = async () => {
+    if (!state.user?.id) return;
     
-    // Normally this would wait for OTP verification
-    // For demo, we'll just proceed after a delay
-    setTimeout(() => {
-      dispatch({
-        type: 'UPDATE_ORDER_STATUS',
-        payload: { orderId: cancelOrderId, status: 'cancelled' }
-      });
+    setLoading(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          items:order_items(*)
+        `)
+        .eq('user_id', state.user.id)
+        .order('ordered_at', { ascending: false });
       
-      toast.success('Order cancelled successfully');
-      setCancelOrderId(null);
-      setCancelReason('');
-      setShowCancelModal(false);
-    }, 2000);
-  };
-  
-  const handleDownloadInvoice = (order: Order) => {
-    // In a real app, this would generate and download a PDF
-    toast.success('Invoice downloaded');
-  };
-  
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">Pending</Badge>;
-      case 'processing':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Processing</Badge>;
-      case 'shipped':
-        return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">Shipped</Badge>;
-      case 'delivered':
-        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Delivered</Badge>;
-      case 'cancelled':
-        return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Cancelled</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+      if (error) throw error;
+      
+      if (data) {
+        // Map the Supabase data to our Order type
+        const mappedOrders: Order[] = data.map(order => ({
+          id: order.id,
+          orderStatus: order.order_status,
+          userId: order.user_id,
+          shippingAddress: order.shipping_address as any,
+          paymentMethod: order.payment_method,
+          totalAmount: parseFloat(order.total_amount.toString()),
+          orderedAt: new Date(order.ordered_at),
+          deliveredAt: order.delivered_at ? new Date(order.delivered_at) : undefined,
+          canCancel: order.can_cancel || false, 
+          canReplace: order.can_replace || false,
+          canReturn: order.can_return || false,
+          items: order.items.map((item: any) => ({
+            id: item.id,
+            productId: item.product_id,
+            productName: item.product_name,
+            quantity: item.quantity,
+            price: parseFloat(item.price.toString()),
+            color: item.color,
+            selected: false
+          }))
+        }));
+        
+        setOrders(mappedOrders);
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load orders."
+      });
+    } finally {
+      setLoading(false);
     }
   };
-
+  
+  const handleCancelOrder = async (orderId: string) => {
+    try {
+      // Update order status in Supabase
+      const { error } = await supabase
+        .from('orders')
+        .update({ order_status: 'cancelled', can_cancel: false })
+        .eq('id', orderId);
+      
+      if (error) throw error;
+      
+      // Update order items status
+      await supabase
+        .from('order_items')
+        .update({ status: 'cancelled' })
+        .eq('order_id', orderId);
+      
+      // Update local state
+      const updatedOrders = orders.map(order => 
+        order.id === orderId 
+          ? { ...order, orderStatus: 'cancelled', canCancel: false } 
+          : order
+      );
+      
+      setOrders(updatedOrders);
+      
+      // Update app context
+      dispatch({
+        type: 'UPDATE_ORDER_STATUS',
+        payload: { orderId, status: 'cancelled' }
+      });
+      
+      toast({
+        title: "Order cancelled",
+        description: "Your order has been cancelled successfully."
+      });
+    } catch (error) {
+      console.error('Error cancelling order:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to cancel order."
+      });
+    }
+  };
+  
+  const getFilteredOrders = () => {
+    switch (activeTab) {
+      case 'active':
+        return orders.filter(order => 
+          !['delivered', 'cancelled'].includes(order.orderStatus.toLowerCase())
+        );
+      case 'completed':
+        return orders.filter(order => 
+          order.orderStatus.toLowerCase() === 'delivered'
+        );
+      case 'cancelled':
+        return orders.filter(order => 
+          order.orderStatus.toLowerCase() === 'cancelled'
+        );
+      default:
+        return orders;
+    }
+  };
+  
+  const formatDate = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(date);
+  };
+  
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(amount);
+  };
+  
   return (
     <Layout>
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-agri-dark mb-6">Your Orders</h1>
+      <div className="container mx-auto px-4 py-12">
+        <h1 className="text-2xl md:text-3xl font-bold mb-6">My Orders</h1>
         
-        {orders.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-lg shadow-md">
-            <Package className="mx-auto h-16 w-16 text-gray-300 mb-4" />
-            <h2 className="text-2xl font-bold text-gray-700 mb-2">No orders yet</h2>
-            <p className="text-gray-500 mb-8">You haven't placed any orders yet.</p>
-            <Button asChild className="bg-agri-primary hover:bg-agri-dark">
-              <a href="/">Continue Shopping</a>
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="bg-white rounded-lg shadow-md">
-              <Tabs 
-                defaultValue="all" 
-                value={activeTab}
-                onValueChange={setActiveTab}
-                className="w-full"
-              >
-                <div className="px-4 pt-4">
-                  <TabsList className="w-full justify-start border-b">
-                    <TabsTrigger value="all" className="flex-1 sm:flex-none">
-                      All Orders
-                    </TabsTrigger>
-                    <TabsTrigger value="pending" className="flex-1 sm:flex-none">
-                      Pending
-                    </TabsTrigger>
-                    <TabsTrigger value="delivered" className="flex-1 sm:flex-none">
-                      Delivered
-                    </TabsTrigger>
-                    <TabsTrigger value="cancelled" className="flex-1 sm:flex-none">
-                      Cancelled
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-                
-                <TabsContent value="all" className="p-0">
-                  <div className="divide-y">
-                    {filteredOrders.map((order) => (
-                      <div key={order.id} className="p-6">
-                        <div className="flex flex-wrap justify-between items-center mb-4">
-                          <div>
-                            <span className="text-sm text-gray-500">Order ID: {order.id}</span>
-                            <div className="flex items-center mt-1">
-                              <span className="text-sm text-gray-500 mr-4">
-                                Placed on: {new Date(order.orderedAt).toLocaleDateString()}
-                              </span>
-                              {getStatusBadge(order.orderStatus)}
+        <Tabs defaultValue="all" className="w-full" onValueChange={setActiveTab}>
+          <TabsList className="mb-8">
+            <TabsTrigger value="all">All Orders</TabsTrigger>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="completed">Completed</TabsTrigger>
+            <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value={activeTab} className="space-y-6">
+            {loading ? (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 animate-pulse mx-auto text-gray-300" />
+                <p className="mt-4 text-gray-500">Loading your orders...</p>
+              </div>
+            ) : getFilteredOrders().length === 0 ? (
+              <div className="text-center py-12 border rounded-lg bg-gray-50">
+                <ShoppingCart className="h-16 w-16 mx-auto text-gray-300" />
+                <h3 className="mt-4 text-xl font-semibold">No Orders Found</h3>
+                <p className="mt-2 text-gray-500">
+                  {activeTab === 'all' 
+                    ? "You haven't placed any orders yet." 
+                    : `You don't have any ${activeTab} orders.`}
+                </p>
+                {activeTab !== 'all' && (
+                  <Button 
+                    variant="outline" 
+                    className="mt-4"
+                    onClick={() => setActiveTab('all')}
+                  >
+                    View All Orders
+                  </Button>
+                )}
+                <Button 
+                  className="mt-4 ml-3 bg-agri-primary hover:bg-agri-dark"
+                  onClick={() => navigate('/')}
+                >
+                  Shop Now
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <Accordion type="single" collapsible className="space-y-4">
+                  {getFilteredOrders().map((order) => (
+                    <AccordionItem key={order.id} value={order.id} className="border rounded-md overflow-hidden">
+                      <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-gray-50">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between w-full text-left">
+                          <div className="flex flex-col mb-3 md:mb-0">
+                            <div className="flex items-center">
+                              <Label className="text-gray-500 mr-2">Order ID:</Label>
+                              <span className="font-medium">{order.id.substring(0, 8)}...</span>
+                            </div>
+                            <span className="text-sm text-gray-500">
+                              {formatDate(order.orderedAt)}
+                            </span>
+                          </div>
+                          <div className="flex flex-col md:items-center">
+                            <StatusBadge status={order.orderStatus} />
+                            <span className="text-sm mt-1 font-semibold">
+                              {formatCurrency(order.totalAmount)}
+                            </span>
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-6 pb-4">
+                        <div className="border-t pt-4 mt-2">
+                          <h4 className="font-semibold mb-2">Order Items</h4>
+                          <div className="space-y-3">
+                            {order.items.map((item) => (
+                              <div key={item.id} className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <div className="w-16 h-16 rounded-md overflow-hidden bg-gray-100 flex items-center justify-center">
+                                    {/* Product image would go here if available */}
+                                    <Package className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                  <div className="ml-4">
+                                    <p className="font-medium">{item.productName}</p>
+                                    <div className="text-sm text-gray-500">
+                                      <span>Qty: {item.quantity}</span>
+                                      <span className="mx-2">•</span>
+                                      <span>Color: {item.color}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="font-semibold">
+                                  {formatCurrency(item.price * item.quantity)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          <div className="mt-6 border-t pt-4">
+                            <div className="flex justify-between mb-2">
+                              <h4 className="font-semibold">Shipping Address</h4>
+                            </div>
+                            <div className="text-gray-600">
+                              <p>{order.shippingAddress.doorNumber}, {order.shippingAddress.street}</p>
+                              <p>{order.shippingAddress.cityOrVillage}, {order.shippingAddress.state} - {order.shippingAddress.pinCode}</p>
                             </div>
                           </div>
-                          <div className="mt-2 sm:mt-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-agri-primary text-agri-primary hover:bg-agri-primary hover:text-white mr-2"
-                              onClick={() => handleDownloadInvoice(order)}
-                            >
-                              <FileText className="h-4 w-4 mr-1" />
-                              Invoice
-                            </Button>
-                            
-                            {order.canCancel && order.orderStatus !== 'cancelled' && (
+                          
+                          <div className="mt-6 border-t pt-4">
+                            <div className="flex justify-between mb-2">
+                              <h4 className="font-semibold">Payment Method</h4>
+                              <span>{order.paymentMethod}</span>
+                            </div>
+                          </div>
+                          
+                          {order.deliveredAt && (
+                            <div className="mt-4 flex justify-between text-sm">
+                              <span className="text-gray-500">Delivered on:</span>
+                              <span className="font-medium">{formatDate(order.deliveredAt)}</span>
+                            </div>
+                          )}
+                          
+                          {order.orderStatus.toLowerCase() !== 'cancelled' && order.canCancel && (
+                            <div className="mt-6 flex justify-end">
                               <Button
                                 variant="outline"
-                                size="sm"
-                                className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
+                                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                                 onClick={() => handleCancelOrder(order.id)}
                               >
-                                Cancel
+                                <X className="mr-2 h-4 w-4" />
+                                Cancel Order
                               </Button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
-                        
-                        <div className="mt-4 space-y-3">
-                          {order.items.map((item, idx) => (
-                            <div key={`${order.id}-${idx}`} className="flex items-center">
-                              <div className="font-medium">{item.productName}</div>
-                              <div className="text-sm text-gray-500 ml-2">
-                                x{item.quantity} (₹{item.price.toLocaleString()}/unit)
-                              </div>
-                              <div className="ml-auto font-medium">
-                                ₹{(item.quantity * item.price).toLocaleString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                          <div>
-                            <div className="text-sm text-gray-500">
-                              Shipped to: {order.shippingAddress.doorNumber}, {order.shippingAddress.street}, 
-                              {order.shippingAddress.cityOrVillage}, {order.shippingAddress.state}, {order.shippingAddress.pinCode}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Payment: {order.paymentMethod === 'cashOnDelivery' ? 'Cash on Delivery' : 'Online Payment'}
-                            </div>
-                          </div>
-                          <div className="text-lg font-bold text-agri-primary">
-                            ₹{order.totalAmount.toLocaleString()}
-                          </div>
-                        </div>
-                        
-                        {['delivered', 'shipped'].includes(order.orderStatus) && (
-                          <div className="mt-4 pt-4 border-t">
-                            <div className="flex space-x-2">
-                              {order.canReplace && (
-                                <Button variant="outline" size="sm">Request Replacement</Button>
-                              )}
-                              
-                              {order.canReturn && (
-                                <Button variant="outline" size="sm">Return Product</Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-                
-                {/* Other tabs show the same content, filtered by the getFilteredOrders function */}
-                <TabsContent value="pending" className="p-0">
-                  <div className="divide-y">
-                    {filteredOrders.map((order) => (
-                      <div key={order.id} className="p-6">
-                        <div className="flex flex-wrap justify-between items-center mb-4">
-                          <div>
-                            <span className="text-sm text-gray-500">Order ID: {order.id}</span>
-                            <div className="flex items-center mt-1">
-                              <span className="text-sm text-gray-500 mr-4">
-                                Placed on: {new Date(order.orderedAt).toLocaleDateString()}
-                              </span>
-                              {getStatusBadge(order.orderStatus)}
-                            </div>
-                          </div>
-                          <div className="mt-2 sm:mt-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-agri-primary text-agri-primary hover:bg-agri-primary hover:text-white mr-2"
-                              onClick={() => handleDownloadInvoice(order)}
-                            >
-                              <FileText className="h-4 w-4 mr-1" />
-                              Invoice
-                            </Button>
-                            
-                            {order.canCancel && order.orderStatus !== 'cancelled' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                               onClick={() => handleCancelOrder(order.id)}
-                              >
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 space-y-3">
-                          {order.items.map((item, idx) => (
-                            <div key={`${order.id}-${idx}`} className="flex items-center">
-                              <div className="font-medium">{item.productName}</div>
-                              <div className="text-sm text-gray-500 ml-2">
-                                x{item.quantity} (₹{item.price.toLocaleString()}/unit)
-                              </div>
-                              <div className="ml-auto font-medium">
-                                ₹{(item.quantity * item.price).toLocaleString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                          <div>
-                            <div className="text-sm text-gray-500">
-                              Shipped to: {order.shippingAddress.doorNumber}, {order.shippingAddress.street}, 
-                              {order.shippingAddress.cityOrVillage}, {order.shippingAddress.state}, {order.shippingAddress.pinCode}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Payment: {order.paymentMethod === 'cashOnDelivery' ? 'Cash on Delivery' : 'Online Payment'}
-                            </div>
-                          </div>
-                          <div className="text-lg font-bold text-agri-primary">
-                            ₹{order.totalAmount.toLocaleString()}
-                          </div>
-                        </div>
-                        
-                        {['delivered', 'shipped'].includes(order.orderStatus) && (
-                          <div className="mt-4 pt-4 border-t">
-                            <div className="flex space-x-2">
-                              {order.canReplace && (
-                                <Button variant="outline" size="sm">Request Replacement</Button>
-                              )}
-                              
-                              {order.canReturn && (
-                                <Button variant="outline" size="sm">Return Product</Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="delivered" className="p-0">
-                  <div className="divide-y">
-                    {filteredOrders.map((order) => (
-                      <div key={order.id} className="p-6">
-                        <div className="flex flex-wrap justify-between items-center mb-4">
-                          <div>
-                            <span className="text-sm text-gray-500">Order ID: {order.id}</span>
-                            <div className="flex items-center mt-1">
-                              <span className="text-sm text-gray-500 mr-4">
-                                Placed on: {new Date(order.orderedAt).toLocaleDateString()}
-                              </span>
-                              {getStatusBadge(order.orderStatus)}
-                            </div>
-                          </div>
-                          <div className="mt-2 sm:mt-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-agri-primary text-agri-primary hover:bg-agri-primary hover:text-white mr-2"
-                              onClick={() => handleDownloadInvoice(order)}
-                            >
-                              <FileText className="h-4 w-4 mr-1" />
-                              Invoice
-                            </Button>
-                            
-                            {order.canCancel && order.orderStatus !== 'cancelled' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                                onClick={() => handleCancelOrder(order.id)}
-                              >
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 space-y-3">
-                          {order.items.map((item, idx) => (
-                            <div key={`${order.id}-${idx}`} className="flex items-center">
-                              <div className="font-medium">{item.productName}</div>
-                              <div className="text-sm text-gray-500 ml-2">
-                                x{item.quantity} (₹{item.price.toLocaleString()}/unit)
-                              </div>
-                              <div className="ml-auto font-medium">
-                                ₹{(item.quantity * item.price).toLocaleString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                          <div>
-                            <div className="text-sm text-gray-500">
-                              Shipped to: {order.shippingAddress.doorNumber}, {order.shippingAddress.street}, 
-                              {order.shippingAddress.cityOrVillage}, {order.shippingAddress.state}, {order.shippingAddress.pinCode}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Payment: {order.paymentMethod === 'cashOnDelivery' ? 'Cash on Delivery' : 'Online Payment'}
-                            </div>
-                          </div>
-                          <div className="text-lg font-bold text-agri-primary">
-                            ₹{order.totalAmount.toLocaleString()}
-                          </div>
-                        </div>
-                        
-                        {['delivered', 'shipped'].includes(order.orderStatus) && (
-                          <div className="mt-4 pt-4 border-t">
-                            <div className="flex space-x-2">
-                              {order.canReplace && (
-                                <Button variant="outline" size="sm">Request Replacement</Button>
-                              )}
-                              
-                              {order.canReturn && (
-                                <Button variant="outline" size="sm">Return Product</Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="cancelled" className="p-0">
-                  <div className="divide-y">
-                    {filteredOrders.map((order) => (
-                      <div key={order.id} className="p-6">
-                        <div className="flex flex-wrap justify-between items-center mb-4">
-                          <div>
-                            <span className="text-sm text-gray-500">Order ID: {order.id}</span>
-                            <div className="flex items-center mt-1">
-                              <span className="text-sm text-gray-500 mr-4">
-                                Placed on: {new Date(order.orderedAt).toLocaleDateString()}
-                              </span>
-                              {getStatusBadge(order.orderStatus)}
-                            </div>
-                          </div>
-                          <div className="mt-2 sm:mt-0">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-agri-primary text-agri-primary hover:bg-agri-primary hover:text-white mr-2"
-                              onClick={() => handleDownloadInvoice(order)}
-                            >
-                              <FileText className="h-4 w-4 mr-1" />
-                              Invoice
-                            </Button>
-                            
-                            {order.canCancel && order.orderStatus !== 'cancelled' && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-red-500 text-red-500 hover:bg-red-500 hover:text-white"
-                                onClick={() => handleCancelOrder(order.id)}
-                              >
-                                Cancel
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="mt-4 space-y-3">
-                          {order.items.map((item, idx) => (
-                            <div key={`${order.id}-${idx}`} className="flex items-center">
-                              <div className="font-medium">{item.productName}</div>
-                              <div className="text-sm text-gray-500 ml-2">
-                                x{item.quantity} (₹{item.price.toLocaleString()}/unit)
-                              </div>
-                              <div className="ml-auto font-medium">
-                                ₹{(item.quantity * item.price).toLocaleString()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        
-                        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                          <div>
-                            <div className="text-sm text-gray-500">
-                              Shipped to: {order.shippingAddress.doorNumber}, {order.shippingAddress.street}, 
-                              {order.shippingAddress.cityOrVillage}, {order.shippingAddress.state}, {order.shippingAddress.pinCode}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Payment: {order.paymentMethod === 'cashOnDelivery' ? 'Cash on Delivery' : 'Online Payment'}
-                            </div>
-                          </div>
-                          <div className="text-lg font-bold text-agri-primary">
-                            ₹{order.totalAmount.toLocaleString()}
-                          </div>
-                        </div>
-                        
-                        {['delivered', 'shipped'].includes(order.orderStatus) && (
-                          <div className="mt-4 pt-4 border-t">
-                            <div className="flex space-x-2">
-                              {order.canReplace && (
-                                <Button variant="outline" size="sm">Request Replacement</Button>
-                              )}
-                              
-                              {order.canReturn && (
-                                <Button variant="outline" size="sm">Return Product</Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </div>
-            
-            {/* Cancel Order Modal */}
-            {showCancelModal && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
-                  <h3 className="text-xl font-semibold mb-4">Cancel Order</h3>
-                  
-                  <p className="mb-4">
-                    Please provide a reason for cancellation. An OTP will be sent to your email for verification.
-                  </p>
-                  
-                  <div className="mb-4">
-                    <Label htmlFor="cancelReason">Reason for Cancellation</Label>
-                    <select
-                      id="cancelReason"
-                      className="w-full p-2 border rounded-md mt-1"
-                      value={cancelReason}
-                      onChange={(e) => setCancelReason(e.target.value)}
-                    >
-                      <option value="">Select a reason</option>
-                      <option value="wrong-product">Ordered Wrong Product</option>
-                      <option value="better-price">Found Better Price Elsewhere</option>
-                      <option value="changed-mind">Changed My Mind</option>
-                      <option value="delay">Shipping Delay</option>
-                      <option value="other">Other Reason</option>
-                    </select>
-                  </div>
-                  
-                  <div className="flex justify-end space-x-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setShowCancelModal(false);
-                        setCancelOrderId(null);
-                        setCancelReason('');
-                      }}
-                    >
-                      Go Back
-                    </Button>
-                    <Button
-                      className="bg-red-500 hover:bg-red-600"
-                      onClick={confirmCancelOrder}
-                      disabled={!cancelReason}
-                    >
-                      Confirm Cancellation
-                    </Button>
-                  </div>
-                </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
               </div>
             )}
-          </>
-        )}
+          </TabsContent>
+        </Tabs>
       </div>
     </Layout>
   );

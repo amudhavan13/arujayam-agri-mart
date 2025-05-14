@@ -2,7 +2,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { User } from '@supabase/supabase-js';
-import { useAppContext } from '@/context/AppContext';
 import { toast } from '@/hooks/use-toast';
 
 // Define the auth context type
@@ -22,7 +21,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { dispatch } = useAppContext();
   
   // Store OTPs (in a real app, this would be stored securely in the backend)
   const [otps, setOtps] = useState<Record<string, string>>({});
@@ -43,9 +41,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
               .single();
               
             if (data) {
-              dispatch({ 
-                type: 'LOGIN_SUCCESS', 
-                payload: {
+              if (window && window.localStorage) {
+                window.localStorage.setItem('user', JSON.stringify({
                   id: session.user.id,
                   username: data.username,
                   email: session.user.email || '',
@@ -53,8 +50,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                   phoneNumber: data.phone_number || '',
                   profilePicture: data.profile_picture || '',
                   isAdmin: data.is_admin || false
-                }
-              });
+                }));
+              }
             }
           }, 0);
         }
@@ -75,9 +72,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .single();
             
           if (data) {
-            dispatch({ 
-              type: 'LOGIN_SUCCESS', 
-              payload: {
+            if (window && window.localStorage) {
+              window.localStorage.setItem('user', JSON.stringify({
                 id: session.user.id,
                 username: data.username,
                 email: session.user.email || '',
@@ -85,8 +81,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 phoneNumber: data.phone_number || '',
                 profilePicture: data.profile_picture || '',
                 isAdmin: data.is_admin || false
-              }
-            });
+              }));
+            }
           }
         }
         
@@ -102,7 +98,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, [dispatch]);
+  }, []);
 
   // Generate a random 6-digit OTP
   const generateOTP = () => {
@@ -237,8 +233,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Sign out function
   const signOut = async () => {
     try {
+      // Clean up auth state
+      if (window && window.localStorage) {
+        window.localStorage.removeItem('user');
+      }
+      
+      // Sign out from Supabase
       await supabase.auth.signOut();
-      dispatch({ type: 'LOGOUT' });
+      
       toast({
         title: "Logged out successfully"
       });
