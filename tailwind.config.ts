@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -52,16 +53,17 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
-				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
-				}
+				// Agricultural theme colors
+				agri: {
+					primary: '#2E7D32',    // Forest green
+					secondary: '#4CAF50',  // Green
+					accent: '#8BC34A',     // Light green
+					muted: '#C8E6C9',      // Pale green
+					dark: '#1B5E20',       // Dark green
+					light: '#E8F5E9',      // Very light green
+					brown: '#795548',      // Earth brown
+					sand: '#ECDCB9',       // Sand color
+				},
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
